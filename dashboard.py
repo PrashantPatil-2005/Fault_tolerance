@@ -10,7 +10,7 @@ from datetime import datetime
 API_BASE_URL = "https://srcapiv2.aams.io/AAMS/AI"
 REQUEST_TIMEOUT = 15
 
-# --- Helper Functions (same as before) ---
+# --- Helper Functions (No changes here) ---
 def get_machine_data():
     try:
         response = requests.post(f"{API_BASE_URL}/Machine", json={}, timeout=REQUEST_TIMEOUT)
@@ -40,19 +40,15 @@ def get_sensor_data(bearing_location_id, axis="H-Axis"):
         print(f"Error fetching sensor data: {e}")
         return None
 
-# --- Data Preparation for Table ---
+# --- Data Preparation for Machine Table ---
 machine_data = get_machine_data()
 if machine_data:
-    # We create a pandas DataFrame, which is great for tables
-    df = pd.DataFrame(machine_data)
-    # Select and rename columns for clarity
-    df = df[['name', 'dataUpdatedTime', 'healthStatus', '_id']]
-    df.columns = ['Machine Name', 'Last Update', 'Health Status', 'id']
-    # Format the date to be more readable
-    df['Last Update'] = pd.to_datetime(df['Last Update']).dt.strftime('%Y-%m-%d %H:%M:%S')
+    df_machines = pd.DataFrame(machine_data)
+    df_machines = df_machines[['name', 'dataUpdatedTime', 'healthStatus', '_id']]
+    df_machines.columns = ['Machine Name', 'Last Update', 'Health Status', 'id']
+    df_machines['Last Update'] = pd.to_datetime(df_machines['Last Update']).dt.strftime('%Y-%m-%d %H:%M:%S')
 else:
-    df = pd.DataFrame(columns=['Machine Name', 'Last Update', 'Health Status', 'id'])
-
+    df_machines = pd.DataFrame(columns=['Machine Name', 'Last Update', 'Health Status', 'id'])
 
 # --- Initialize the Dash App ---
 app = dash.Dash(__name__)
@@ -63,15 +59,13 @@ app.layout = html.Div([
     html.H1("AAMS Predictive Maintenance Dashboard"),
     html.Hr(),
     html.H3("Machine Health Overview"),
-    # NEW: Using DataTable to show the main health report
     dash_table.DataTable(
         id='machine-table',
-        columns=[{"name": i, "id": i} for i in df.columns if i != 'id'], # Don't display the ID column
-        data=df.to_dict('records'),
-        row_selectable='single', # Allow user to select one machine
+        columns=[{"name": i, "id": i} for i in df_machines.columns if i != 'id'],
+        data=df_machines.to_dict('records'),
+        row_selectable='single',
         style_cell={'textAlign': 'left', 'padding': '10px'},
         style_header={'backgroundColor': 'lightgrey', 'fontWeight': 'bold'},
-        # NEW: Applying color-coding to the 'Health Status' column
         style_data_conditional=[
             {'if': {'filter_query': '{Health Status} = "Alarm"'}, 'backgroundColor': '#FF4136', 'color': 'white'},
             {'if': {'filter_query': '{Health Status} = "Normal"'}, 'backgroundColor': '#FFD700', 'color': 'black'},
@@ -79,54 +73,81 @@ app.layout = html.Div([
         ]
     ),
     html.Hr(),
-    # The dropdown for bearings is now updated by the table selection
-    html.H3("Detailed Analysis"),
+    html.H3("Detailed Check-up"),
     html.Div(id='selected-machine-name'),
-    dcc.Dropdown(id='bearing-dropdown'),
+    # NEW: A table to show the bearings of the selected machine
+    dash_table.DataTable(
+        id='bearing-table',
+        columns=[
+            {'name': 'Bearing Name', 'id': 'Bearing Name'},
+            {'name': 'Health Status', 'id': 'Health Status'}
+        ],
+        data=[], # Initially empty
+        row_selectable='single',
+        style_cell={'textAlign': 'left', 'padding': '10px'},
+        style_header={'backgroundColor': 'lightgrey', 'fontWeight': 'bold'},
+        style_data_conditional=[ # Color-coding for this table as well
+            {'if': {'filter_query': '{Health Status} = "Alarm"'}, 'backgroundColor': '#FF4136', 'color': 'white'},
+            {'if': {'filter_query': '{Health Status} = "Normal"'}, 'backgroundColor': '#FFD700', 'color': 'black'},
+            {'if': {'filter_query': '{Health Status} = "Satisfactory"'}, 'backgroundColor': '#2ECC40', 'color': 'white'},
+        ]
+    ),
+    html.Hr(),
+    html.H3("Vibration Analysis"),
     dcc.Graph(id='raw-data-graph'),
     dcc.Graph(id='fft-graph')
-])
+], style={'fontFamily': 'Arial, sans-serif'})
 
 # --- Callbacks to Make the App Interactive ---
 
-# This callback updates the bearing dropdown when a machine is selected in the table
+# Callback to update the bearing table based on machine selection
 @app.callback(
-    Output('bearing-dropdown', 'options'),
+    Output('bearing-table', 'data'),
     Output('selected-machine-name', 'children'),
     Input('machine-table', 'selected_rows'))
-def update_bearing_dropdown(selected_rows):
+def update_bearing_table(selected_rows):
     if not selected_rows:
         return [], "Please select a machine from the table above."
     
-    selected_machine_id = df.iloc[selected_rows[0]]['id']
-    selected_machine_name = df.iloc[selected_rows[0]]['Machine Name']
+    selected_machine_id = df_machines.iloc[selected_rows[0]]['id']
+    selected_machine_name = df_machines.iloc[selected_rows[0]]['Machine Name']
     
     bearing_data = get_bearing_data(selected_machine_id)
-    bearing_options = [{'label': i['name'], 'value': i['_id']} for i in bearing_data]
-    
-    return bearing_options, f"Showing details for: {selected_machine_name}"
+    if not bearing_data:
+        return [], f"No bearing data available for: {selected_machine_name}"
 
-# This callback updates the graphs based on the selected bearing
+    df_bearings = pd.DataFrame(bearing_data)
+    df_bearings = df_bearings[['name', 'healthStatus', '_id']]
+    df_bearings.columns = ['Bearing Name', 'Health Status', 'id']
+    
+    return df_bearings.to_dict('records'), f"Showing details for: {selected_machine_name}"
+
+# Callback to update graphs based on bearing selection from the new table
 @app.callback(
     Output('raw-data-graph', 'figure'),
     Output('fft-graph', 'figure'),
-    Input('bearing-dropdown', 'value'))
-def update_graphs(selected_bearing):
-    # This function remains largely the same
-    if not selected_bearing:
+    Input('bearing-table', 'selected_rows'),
+    # We also need the full bearing data from the previous callback
+    dash.dependencies.State('bearing-table', 'data'))
+def update_graphs(selected_rows, bearing_data):
+    if not selected_rows:
         empty_fig = {'data': [], 'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 'annotations': [{'text': 'Select a bearing to see its vibration data', 'showarrow': False}]}}
         return empty_fig, empty_fig
 
-    sensor_data = get_sensor_data(selected_bearing)
+    selected_bearing_row = bearing_data[selected_rows[0]]
+    selected_bearing_id = selected_bearing_row['id']
+    
+    sensor_data = get_sensor_data(selected_bearing_id)
     if not sensor_data or 'rawData' not in sensor_data:
-        error_layout = {'title': 'Error: Could not retrieve sensor data.'}
+        error_layout = {'title': f"Error: Could not retrieve data for {selected_bearing_row['Bearing Name']}."}
         return {'data': [], 'layout': error_layout}, {'data': [], 'layout': error_layout}
     
     raw_data = sensor_data.get('rawData', [])
     sampling_rate = float(sensor_data.get('SR', 1))
+    graph_title = f"Vibration Data for: {selected_bearing_row['Bearing Name']}"
     
     time_df = pd.DataFrame({'Time (s)': np.arange(len(raw_data)) / sampling_rate, 'Amplitude': raw_data})
-    raw_fig = px.line(time_df, x='Time (s)', y='Amplitude', title='Raw Vibration Data (Time Domain)')
+    raw_fig = px.line(time_df, x='Time (s)', y='Amplitude', title=f"{graph_title} (Time Domain)")
 
     N = len(raw_data)
     T = 1.0 / sampling_rate
@@ -135,7 +156,7 @@ def update_graphs(selected_bearing):
     amplitude = 2.0 / N * np.abs(yf[0:N // 2])
     
     fft_df = pd.DataFrame({'Frequency (Hz)': xf, 'Amplitude': amplitude})
-    fft_fig = px.line(fft_df, x='Frequency (Hz)', y='Amplitude', title='Frequency Spectrum (FFT)')
+    fft_fig = px.line(fft_df, x='Frequency (Hz)', y='Amplitude', title=f"{graph_title} (Frequency Spectrum)")
     
     return raw_fig, fft_fig
 
