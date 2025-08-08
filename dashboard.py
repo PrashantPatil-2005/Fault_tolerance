@@ -1,24 +1,19 @@
 import dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, dash_table
 import plotly.express as px
 import pandas as pd
 import requests
 import numpy as np
+from datetime import datetime
 
 # --- Configuration ---
-# FIX 1: Using the correct API base URL from the documentation
 API_BASE_URL = "https://srcapiv2.aams.io/AAMS/AI"
+REQUEST_TIMEOUT = 15
 
-# --- Helper Functions to Get Data from API ---
-# Note: The API documentation specifies POST requests, but for simple GETs without a body,
-# a POST can sometimes work if the server is configured for it.
-# We'll use POST as specified.
-
+# --- Helper Functions (same as before) ---
 def get_machine_data():
-    """Fetches the list of all machines."""
     try:
-        # The documentation specifies POST, so we send an empty json payload.
-        response = requests.post(f"{API_BASE_URL}/Machine", json={})
+        response = requests.post(f"{API_BASE_URL}/Machine", json={}, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
@@ -26,83 +21,107 @@ def get_machine_data():
         return []
 
 def get_bearing_data(machine_id):
-    """Fetches bearing locations for a specific machine."""
     try:
         payload = {"machineId": machine_id}
-        response = requests.post(f"{API_BASE_URL}/BearingLocation", json=payload)
+        response = requests.post(f"{API_BASE_URL}/BearingLocation", json=payload, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching bearing data for machine {machine_id}: {e}")
+        print(f"Error fetching bearing data: {e}")
         return []
 
 def get_sensor_data(bearing_location_id, axis="H-Axis"):
-    """Fetches sensor data for a specific bearing."""
     try:
-        # Based on the jupyter notebook, the payload needs these fields
-        payload = {
-            "bearingLocationId": bearing_location_id,
-            "Axis_Id": axis,
-            "type": "OFFLINE",
-            "Analytics_Types": "MF"
-        }
-        response = requests.post(f"{API_BASE_URL}/Data", json=payload)
+        payload = {"bearingLocationId": bearing_location_id, "Axis_Id": axis, "type": "OFFLINE", "Analytics_Types": "MF"}
+        response = requests.post(f"{API_BASE_URL}/Data", json=payload, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching sensor data for bearing {bearing_location_id}: {e}")
+        print(f"Error fetching sensor data: {e}")
         return None
+
+# --- Data Preparation for Table ---
+machine_data = get_machine_data()
+if machine_data:
+    # We create a pandas DataFrame, which is great for tables
+    df = pd.DataFrame(machine_data)
+    # Select and rename columns for clarity
+    df = df[['name', 'dataUpdatedTime', 'healthStatus', '_id']]
+    df.columns = ['Machine Name', 'Last Update', 'Health Status', 'id']
+    # Format the date to be more readable
+    df['Last Update'] = pd.to_datetime(df['Last Update']).dt.strftime('%Y-%m-%d %H:%M:%S')
+else:
+    df = pd.DataFrame(columns=['Machine Name', 'Last Update', 'Health Status', 'id'])
+
 
 # --- Initialize the Dash App ---
 app = dash.Dash(__name__)
 app.title = "AAMS Predictive Maintenance Dashboard"
 
 # --- Define the Layout of the App ---
-# Fetch initial machine data for the dropdown
-machine_options = [{'label': i['name'], 'value': i['_id']} for i in get_machine_data()]
-
 app.layout = html.Div([
     html.H1("AAMS Predictive Maintenance Dashboard"),
     html.Hr(),
-    html.Div([
-        html.Div([
-            html.Label("Select Machine:"),
-            dcc.Dropdown(id='machine-dropdown', options=machine_options),
-        ], style={'width': '48%', 'display': 'inline-block'}),
-        html.Div([
-            html.Label("Select Bearing Location:"),
-            dcc.Dropdown(id='bearing-dropdown'),
-        ], style={'width': '48%', 'float': 'right', 'display': 'inline-block'})
-    ]),
+    html.H3("Machine Health Overview"),
+    # NEW: Using DataTable to show the main health report
+    dash_table.DataTable(
+        id='machine-table',
+        columns=[{"name": i, "id": i} for i in df.columns if i != 'id'], # Don't display the ID column
+        data=df.to_dict('records'),
+        row_selectable='single', # Allow user to select one machine
+        style_cell={'textAlign': 'left', 'padding': '10px'},
+        style_header={'backgroundColor': 'lightgrey', 'fontWeight': 'bold'},
+        # NEW: Applying color-coding to the 'Health Status' column
+        style_data_conditional=[
+            {'if': {'filter_query': '{Health Status} = "Alarm"'}, 'backgroundColor': '#FF4136', 'color': 'white'},
+            {'if': {'filter_query': '{Health Status} = "Normal"'}, 'backgroundColor': '#FFD700', 'color': 'black'},
+            {'if': {'filter_query': '{Health Status} = "Satisfactory"'}, 'backgroundColor': '#2ECC40', 'color': 'white'},
+        ]
+    ),
     html.Hr(),
-    html.H3("Vibration Analysis"),
+    # The dropdown for bearings is now updated by the table selection
+    html.H3("Detailed Analysis"),
+    html.Div(id='selected-machine-name'),
+    dcc.Dropdown(id='bearing-dropdown'),
     dcc.Graph(id='raw-data-graph'),
     dcc.Graph(id='fft-graph')
 ])
 
 # --- Callbacks to Make the App Interactive ---
+
+# This callback updates the bearing dropdown when a machine is selected in the table
 @app.callback(
     Output('bearing-dropdown', 'options'),
-    Input('machine-dropdown', 'value'))
-def set_bearing_options(selected_machine):
-    if not selected_machine:
-        return []
-    bearing_data = get_bearing_data(selected_machine)
-    return [{'label': i['name'], 'value': i['_id']} for i in bearing_data]
+    Output('selected-machine-name', 'children'),
+    Input('machine-table', 'selected_rows'))
+def update_bearing_dropdown(selected_rows):
+    if not selected_rows:
+        return [], "Please select a machine from the table above."
+    
+    selected_machine_id = df.iloc[selected_rows[0]]['id']
+    selected_machine_name = df.iloc[selected_rows[0]]['Machine Name']
+    
+    bearing_data = get_bearing_data(selected_machine_id)
+    bearing_options = [{'label': i['name'], 'value': i['_id']} for i in bearing_data]
+    
+    return bearing_options, f"Showing details for: {selected_machine_name}"
 
+# This callback updates the graphs based on the selected bearing
 @app.callback(
     Output('raw-data-graph', 'figure'),
     Output('fft-graph', 'figure'),
     Input('bearing-dropdown', 'value'))
 def update_graphs(selected_bearing):
+    # This function remains largely the same
     if not selected_bearing:
-        empty_fig = {'data': [], 'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}}}
+        empty_fig = {'data': [], 'layout': {'xaxis': {'visible': False}, 'yaxis': {'visible': False}, 'annotations': [{'text': 'Select a bearing to see its vibration data', 'showarrow': False}]}}
         return empty_fig, empty_fig
 
     sensor_data = get_sensor_data(selected_bearing)
     if not sensor_data or 'rawData' not in sensor_data:
-        return {'data': [], 'layout': {'title': 'No Data Available'}}, {'data': [], 'layout': {'title': 'No Data Available'}}
-
+        error_layout = {'title': 'Error: Could not retrieve sensor data.'}
+        return {'data': [], 'layout': error_layout}, {'data': [], 'layout': error_layout}
+    
     raw_data = sensor_data.get('rawData', [])
     sampling_rate = float(sensor_data.get('SR', 1))
     
@@ -122,5 +141,4 @@ def update_graphs(selected_bearing):
 
 # --- Run the App ---
 if __name__ == '__main__':
-    # FIX 2: Using the new command to run the app
     app.run(debug=True)
