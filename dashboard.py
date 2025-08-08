@@ -4,14 +4,25 @@ import plotly.express as px
 import pandas as pd
 import requests
 import numpy as np
-from datetime import datetime
+import json # Import the json library
 
-# --- Configuration ---
+# --- OFFLINE MODE ---
+# Set to True to use local 'sample_data.json'
+# Set to False to use the live API
+OFFLINE_MODE = True
+
+# --- Configuration (Only used if OFFLINE_MODE is False) ---
 API_BASE_URL = "https://srcapiv2.aams.io/AAMS/AI"
 REQUEST_TIMEOUT = 15
 
-# --- Helper Functions (No changes here) ---
+# --- Helper Functions ---
 def get_machine_data():
+    if OFFLINE_MODE:
+        # In offline mode, we create fake machine data
+        return [
+            {'_id': '6093a75d22b9f000085354b4', 'name': 'Sample Machine (Offline)', 'dataUpdatedTime': '2021-09-02T10:05:46.398Z', 'healthStatus': 'Satisfactory'}
+        ]
+    # Online mode functionality remains the same
     try:
         response = requests.post(f"{API_BASE_URL}/Machine", json={}, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
@@ -21,6 +32,11 @@ def get_machine_data():
         return []
 
 def get_bearing_data(machine_id):
+    if OFFLINE_MODE:
+        # Create fake bearing data
+        return [
+            {'_id': '6093a77822b9f000085354b6', 'name': 'Sample Bearing (Offline)', 'healthStatus': 'Satisfactory'}
+        ]
     try:
         payload = {"machineId": machine_id}
         response = requests.post(f"{API_BASE_URL}/BearingLocation", json=payload, timeout=REQUEST_TIMEOUT)
@@ -30,15 +46,26 @@ def get_bearing_data(machine_id):
         print(f"Error fetching bearing data: {e}")
         return []
 
-def get_sensor_data(bearing_location_id, axis="H-Axis"):
+def get_sensor_data(bearing_location_id):
+    if OFFLINE_MODE:
+        # In offline mode, read from the local JSON file
+        try:
+            with open('sample_data.json', 'r') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            print("Error: 'sample_data.json' not found. Please create it in the same directory.")
+            return None
     try:
-        payload = {"bearingLocationId": bearing_location_id, "Axis_Id": axis, "type": "OFFLINE", "Analytics_Types": "MF"}
+        payload = {"bearingLocationId": bearing_location_id, "Axis_Id": "H-Axis", "type": "OFFLINE", "Analytics_Types": "MF"}
         response = requests.post(f"{API_BASE_URL}/Data", json=payload, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.exceptions.RequestException as e:
         print(f"Error fetching sensor data: {e}")
         return None
+
+# --- The rest of the script is the same as our last version ---
+# (No changes needed below this line)
 
 # --- Data Preparation for Machine Table ---
 machine_data = get_machine_data()
@@ -50,6 +77,7 @@ if machine_data:
 else:
     df_machines = pd.DataFrame(columns=['Machine Name', 'Last Update', 'Health Status', 'id'])
 
+
 # --- Initialize the Dash App ---
 app = dash.Dash(__name__, external_stylesheets=['https://codepen.io/chriddyp/pen/bWLwgP.css'])
 app.title = "AAMS Predictive Maintenance Dashboard"
@@ -58,6 +86,7 @@ app.title = "AAMS Predictive Maintenance Dashboard"
 app.layout = html.Div([
     html.Div([
         html.H1("AAMS Predictive Maintenance Dashboard", style={'textAlign': 'center'}),
+        html.H4("(Offline Mode)" if OFFLINE_MODE else "(Live Mode)", style={'textAlign': 'center', 'color': 'red' if OFFLINE_MODE else 'green'})
     ], className='row'),
     html.Div([
         html.H4("Machine Health Overview"),
@@ -94,7 +123,6 @@ app.layout = html.Div([
     ], className='row', style={'marginTop': '20px'}),
     html.Div([
         html.H4("Vibration Analysis"),
-        # NEW: A section to display key parameters
         html.Div(id='bearing-parameters-display'),
         dcc.Graph(id='raw-data-graph'),
         dcc.Graph(id='fft-graph'),
@@ -128,7 +156,7 @@ def update_bearing_table(selected_rows, machine_table_data):
 @app.callback(
     Output('raw-data-graph', 'figure'),
     Output('fft-graph', 'figure'),
-    Output('bearing-parameters-display', 'children'), # NEW: Output for parameters
+    Output('bearing-parameters-display', 'children'),
     Input('bearing-table', 'selected_rows'),
     State('bearing-table', 'data'))
 def update_graphs(selected_rows, bearing_data):
@@ -150,18 +178,15 @@ def update_graphs(selected_rows, bearing_data):
     fmax = sensor_data.get('fMax', 'N/A')
     graph_title = f"Vibration Data for: {selected_bearing_row['Bearing Name']}"
 
-    # NEW: Create the parameter display
     parameters_display = html.Div([
         html.B("RPM: "), f"{rpm}", html.Br(),
         html.B("Sampling Rate (SR): "), f"{sampling_rate} Hz", html.Br(),
         html.B("Max Frequency (fMax): "), f"{fmax} Hz"
     ], style={'padding': '10px', 'border': '1px solid lightgrey', 'marginBottom': '10px'})
 
-    # Create Time Domain Plot
     time_df = pd.DataFrame({'Time (s)': np.arange(len(raw_data)) / sampling_rate, 'Amplitude': raw_data})
     raw_fig = px.line(time_df, x='Time (s)', y='Amplitude', title=f"{graph_title} (Time Domain)")
 
-    # Create Frequency Domain (FFT) Plot
     N = len(raw_data)
     T = 1.0 / sampling_rate
     yf = np.fft.fft(raw_data)
@@ -171,7 +196,6 @@ def update_graphs(selected_rows, bearing_data):
     fft_df = pd.DataFrame({'Frequency (Hz)': xf, 'Amplitude': amplitude})
     fft_fig = px.line(fft_df, x='Frequency (Hz)', y='Amplitude', title=f"{graph_title} (Frequency Spectrum)")
     
-    # NEW: Add crosshairs to the graphs for better analysis
     raw_fig.update_layout(hovermode='x')
     fft_fig.update_layout(hovermode='x unified')
 
