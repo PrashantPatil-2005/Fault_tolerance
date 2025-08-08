@@ -1,0 +1,7 @@
+{
+    "bearing_1A": [ { "date": "2025-07-10T10:00:00Z", "alarmValue": 2.1 }, { "date": "2025-08-01T10:00:00Z", "alarmValue": 6.2 } ],
+    "bearing_2A": [ { "date": "2025-07-10T10:00:00Z", "alarmValue": 0.5 }, { "date": "2025-08-01T10:00:00Z", "alarmValue": 0.4 } ],
+    "bearing_2B": [ { "date": "2025-07-10T10:00:00Z", "alarmValue": 0.4 }, { "date": "2025-08-01T10:00:00Z", "alarmValue": 0.3 } ],
+    "bearing_3A": [ { "date": "2025-07-10T10:00:00Z", "alarmValue": 1.2 }, { "date": "2025-08-01T10:00:00Z", "alarmValue": 1.8 } ],
+    "bearing_3B": [ { "date": "2025-07-10T10:00:00Z", "alarmValue": 0.3 }, { "date": "2025-08-01T10:00:00Z", "alarmValue": 0.3 } ]
+}

@@ -1,0 +1,17 @@
+{
+    "machine_1": [
+        { "_id": "bearing_1A", "name": "Compressor DE", "healthStatus": "Alarm" },
+        { "_id": "bearing_1B", "name": "Compressor NDE (No Data)", "healthStatus": "Normal" }
+    ],
+    "machine_2": [
+        { "_id": "bearing_2A", "name": "Fan Motor DE", "healthStatus": "Satisfactory" },
+        { "_id": "bearing_2B", "name": "Fan Motor NDE", "healthStatus": "Satisfactory" }
+    ],
+    "machine_3": [
+        { "_id": "bearing_3A", "name": "Pump Upper", "healthStatus": "Normal" },
+        { "_id": "bearing_3B", "name": "Pump Lower", "healthStatus": "Satisfactory" }
+    ],
+    "machine_4": [
+        { "_id": "bearing_4A", "name": "Main Motor Bearing", "healthStatus": "Satisfactory" }
+    ]
+}
