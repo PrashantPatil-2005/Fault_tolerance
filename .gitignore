@@ -1,3 +1,9 @@
+# Ignore all data files (if private)
+data/*.json
+
+# Ignore environment files
+.env
+
 # ===== Python General =====
 __pycache__/
 *.py[cod]
