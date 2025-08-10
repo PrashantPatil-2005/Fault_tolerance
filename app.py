@@ -23,59 +23,69 @@ app.title = "AAMS Predictive Maintenance Dashboard"
 
 # --- Layout ---
 app.layout = html.Div([
+    # --- HEADER ---
     html.Div([
         html.H1("AAMS Predictive Maintenance Dashboard", style={'textAlign': 'center'}),
         html.H4("(Offline Mode)" if OFFLINE_MODE else "(Live Mode)", style={'textAlign': 'center', 'color': 'red' if OFFLINE_MODE else 'green'})
-    ], className='row'),
+    ]),
 
-    html.Div([
-        html.H4("Machine Health Overview"),
-        dash_table.DataTable(
-            id='machine-table',
-            columns=[{"name": i, "id": i} for i in df_machines.columns if i != 'id'],
-            data=df_machines.to_dict('records') if not df_machines.empty else [],
-            row_selectable='single',
-            style_cell={'textAlign': 'left'},
-            style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
-            style_data_conditional=[
-                {'if': {'filter_query': '{Health Status} = "Alarm"'}, 'backgroundColor': '#FF4136', 'color': 'white'},
-                {'if': {'filter_query': '{Health Status} = "Normal"'}, 'backgroundColor': '#FFD700', 'color': 'black'},
-                {'if': {'filter_query': '{Health Status} = "Satisfactory"'}, 'backgroundColor': '#2ECC40', 'color': 'white'}
-            ]
-        )
-    ], className='row', style={'marginTop': '20px'}),
+    # --- TWO-COLUMN CONTAINER ---
+    html.Div(className='two-column-container', children=[
 
-    html.Div([
-        html.H4("Detailed Check-up"),
-        html.P(id='selected-machine-name'),
-        dash_table.DataTable(
-            id='bearing-table',
-            columns=[{'name': 'Bearing Name', 'id': 'Bearing Name'}, {'name': 'Health Status', 'id': 'Health Status'}],
-            data=[],
-            row_selectable='single',
-            style_cell={'textAlign': 'left'},
-            style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
-            style_data_conditional=[
-                {'if': {'filter_query': '{Health Status} = "Alarm"'}, 'backgroundColor': '#FF4136', 'color': 'white'},
-                {'if': {'filter_query': '{Health Status} = "Normal"'}, 'backgroundColor': '#FFD700', 'color': 'black'},
-                {'if': {'filter_query': '{Health Status} = "Satisfactory"'}, 'backgroundColor': '#2ECC40', 'color': 'white'}
-            ]
-        )
-    ], className='row', style={'marginTop': '20px'}),
+        # --- LEFT COLUMN (TABLES) ---
+        html.Div(className='left-column', children=[
+            html.H4("Machine Health Overview"),
+            dash_table.DataTable(
+                id='machine-table',
+                columns=[{"name": i, "id": i} for i in df_machines.columns if i != 'id'],
+                data=df_machines.to_dict('records') if not df_machines.empty else [],
+                row_selectable='single',
+                style_cell={'textAlign': 'left'},
+                style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
+                style_data_conditional=[
+                    {'if': {'filter_query': '{Health Status} = "Alarm"'}, 'backgroundColor': '#FF4136', 'color': 'white'},
+                    {'if': {'filter_query': '{Health Status} = "Normal"'}, 'backgroundColor': '#FFD700', 'color': 'black'},
+                    {'if': {'filter_query': '{Health Status} = "Satisfactory"'}, 'backgroundColor': '#2ECC40', 'color': 'white'}
+                ]
+            ),
+            
+            html.H4("Detailed Check-up", style={'marginTop': '20px'}),
+            html.P(id='selected-machine-name'),
+            dash_table.DataTable(
+                id='bearing-table',
+                columns=[{'name': 'Bearing Name', 'id': 'Bearing Name'}, {'name': 'Health Status', 'id': 'Health Status'}],
+                data=[],
+                row_selectable='single',
+                style_cell={'textAlign': 'left'},
+                style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
+                style_data_conditional=[
+                    {'if': {'filter_query': '{Health Status} = "Alarm"'}, 'backgroundColor': '#FF4136', 'color': 'white'},
+                    {'if': {'filter_query': '{Health Status} = "Normal"'}, 'backgroundColor': '#FFD700', 'color': 'black'},
+                    {'if': {'filter_query': '{Health Status} = "Satisfactory"'}, 'backgroundColor': '#2ECC40', 'color': 'white'}
+                ]
+            )
+        ]),
 
-    html.Div([
-        html.H4("Historical Health Trend (30 Days)"),
-        dcc.Graph(id='historical-trend-graph')
-    ], className='row', style={'marginTop': '20px'}),
-
-    html.Div([
-        html.H4("Vibration Analysis (Snapshot)"),
-        html.Div(id='bearing-parameters-display'),
-        dcc.Graph(id='raw-data-graph'),
-        dcc.Graph(id='fft-graph')
-    ], className='row', style={'marginTop': '20px'}),
-
+        # --- RIGHT COLUMN (GRAPHS) ---
+        html.Div(className='right-column', children=[
+            html.H4("Historical Health Trend (30 Days)"),
+            dcc.Graph(id='historical-trend-graph'),
+            
+            html.H4("Vibration Analysis (Snapshot)", style={'marginTop': '20px'}),
+            html.Div(id='bearing-parameters-display'),
+            
+            html.Div(className='snapshot-graph-container', children=[
+                html.Div(className='snapshot-graph-item', children=[
+                    dcc.Graph(id='raw-data-graph')
+                ]),
+                html.Div(className='snapshot-graph-item', children=[
+                    dcc.Graph(id='fft-graph')
+                ])
+            ])
+        ])
+    ])
 ], className='container')
+
 
 # --- Callbacks ---
 @app.callback(
@@ -141,7 +151,6 @@ def update_snapshot_graphs(selected_rows, bearing_data):
         error_layout = {'title': {'text': f"No Snapshot Data Available for {selected_bearing_row['Bearing Name']}"}}
         return {'data': [], 'layout': error_layout}, {'data': [], 'layout': error_layout}, []
 
-    # --- Use imported functions ---
     raw_data = sensor_data.get('rawData', [])
     sampling_rate = float(sensor_data.get('SR', 0))
     rpm = sensor_data.get('rpm', 'N/A')
