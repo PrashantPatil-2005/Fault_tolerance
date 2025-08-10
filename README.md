@@ -28,7 +28,6 @@ The dashboard is built with Python using the Dash framework and can operate in t
 The project is organized into a modular structure for clarity and maintainability:
 
 ```
-/
 ├── data/                     # Contains sample data for offline mode
 │   ├── machines.json
 │   ├── bearings.json
