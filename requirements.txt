@@ -1,0 +1,6 @@
+# fault_tolerance/requirements.txt
+dash
+pandas
+requests
+numpy
+plotly
