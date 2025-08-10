@@ -1,6 +1,5 @@
 import os
 import json
-from librosa import cite
 import requests
 from dotenv import load_dotenv
 
@@ -21,15 +20,10 @@ def get_machine_data():
             return []
             
     try:
-        # The server times out on empty requests {}.
-        # We will send a filtered request that is known to work,
-        # asking for machines with a "Satisfactory" status by default.
         payload = {
             "status": "Satisfactory"
         }
-        
         print(f"Fetching data from API with filter: {payload}")
-        
         response = requests.post(
             f"{API_BASE_URL}/Machine", 
             json=payload, 
@@ -58,7 +52,8 @@ def get_bearing_data(machine_id):
         )
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"API request for bearing data failed: {e}")
         return []
 
 def get_sensor_data(bearing_id):
@@ -83,7 +78,8 @@ def get_sensor_data(bearing_id):
         )
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
+        print(f"API request for sensor data failed: {e}")
         return None
 
 def get_historical_data(bearing_id):
@@ -94,5 +90,25 @@ def get_historical_data(bearing_id):
                 return all_historical_data.get(bearing_id)
         except (FileNotFoundError, json.JSONDecodeError):
             return None
-    # This function would need a live API endpoint defined 
-    return None 
+            
+    # --- IMPLEMENTED FOR ONLINE MODE ---
+    try:
+        # NOTE: This payload is an assumption based on common API design.
+        # It assumes the API can distinguish a historical request via a 'type'
+        # parameter and can handle a request for a specific number of days.
+        payload = {
+            "bearingLocationId": bearing_id,
+            "type": "HISTORICAL",
+            "days": 30 
+        }
+        # Assumes historical data is fetched from the same /Data endpoint
+        response = requests.post(
+            f"{API_BASE_URL}/Data",
+            json=payload,
+            timeout=REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"API request for historical data failed: {e}")
+        return None
