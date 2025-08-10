@@ -95,4 +95,4 @@ def get_historical_data(bearing_id):
         except (FileNotFoundError, json.JSONDecodeError):
             return None
     # This function would need a live API endpoint defined 
-    return None [cite: 1]
+    return None 
